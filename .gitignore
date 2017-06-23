@@ -15,8 +15,11 @@
 .bundle
 .chef
 .DS_Store
+.Python
 .rake_tasks
 bin
+include
 lib
 node_modules
+pip-selfcheck.json
 vendor
