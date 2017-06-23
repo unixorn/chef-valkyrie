@@ -1,0 +1,237 @@
+#!/usr/bin/env python2.7
+#
+# Copyright 2017, Castlight Health
+#
+# License: Apache
+
+'''
+Connect to a chef server, then iterate over all the nodes to confirm
+they're still alive by checking with EC2 to see that the instance-id
+is still present.
+
+You must run this from a directory that has a valid .chef subdirectory
+so that we can run knife.
+'''
+
+import argparse
+import json
+import logging
+import os
+import subprocess
+import sys
+
+import boto
+import boto.ec2
+import coloredlogs
+
+
+# this is a pointer to the module object instance itself. We'll attach
+# a logger to it later.
+this = sys.modules[__name__]
+
+
+def getCustomLogger(name, logLevel):
+  '''
+  Set up logging
+
+  :param str name: What log level to set
+  :param str logLevel: What log level to use
+  :rtype: logger
+  '''
+  assert isinstance(name, basestring), ("name must be a string but is %r" % name)
+
+  validLogLevels = ['CRITICAL', 'DEBUG', 'ERROR', 'INFO', 'WARNING']
+
+  if not logLevel:
+    logLevel = 'DEBUG'
+
+  # If they don't specify a valid log level, err on the side of verbosity
+  if logLevel.upper() not in validLogLevels:
+    logLevel = 'DEBUG'
+
+  numericLevel = getattr(logging, logLevel.upper(), None)
+  if not isinstance(numericLevel, int):
+    raise ValueError("Invalid log level: %s" % logLevel)
+
+  logger = logging.getLogger(name)
+  coloredlogs.install(level=logLevel.upper(), logger=logger)
+  return logger
+
+
+def parseCommandLine():
+  '''
+  Read the command line arguments
+
+  @returns an argparse configuration object
+  '''
+  validLogLevels = ['CRITICAL', 'DEBUG', 'ERROR', 'INFO', 'WARNING']
+
+  parser = argparse.ArgumentParser(description='''Search for instances in EC2.
+   If they no longer exist, remove them from Chef Server.''')
+
+  parser.add_argument('--dry-run', dest='dryRun', action='store_true')
+  parser.add_argument('--no-dry-run', dest='dryRun', action='store_false')
+  parser.set_defaults(dryRun=False)
+
+  parser.add_argument('--aws-account-id',
+                      help='AWS account to process',
+                      dest='aws_account_id',
+                      required=True)
+
+  parser.add_argument('--log-level', type=str, choices=validLogLevels,
+                      help='Set logging level',
+                      dest='logLevel',
+                      default='INFO')
+
+  return parser.parse_args()
+
+
+def sanityCheck():
+  '''
+  Confirm that our pre-requisites are in place
+  '''
+  this.logger.debug('Checking for .chef directory')
+  if not os.path.isdir('.chef'):
+    this.logger.critical('Cannot find .chef directory, exiting')
+    sys.exit(1)
+
+  this.logger.debug('Checking for knife.rb')
+  if not os.path.isfile('.chef/knife.rb'):
+    this.logger.critical('.chef/knife.rb missing, exiting')
+    sys.exit(1)
+
+  this.logger.debug('sanityCheck OK')
+
+
+def getNodeList():
+  '''
+  Read all nodes from the chef server
+  '''
+  this.logger.info('Reading node list from Chef Server')
+  try:
+    jsonNodeData = subprocess.check_output(['knife', 'node', 'list', '-F', 'json'])
+  except OSError as failure:
+    this.logger.critical('Could not load node list from Chef server')
+    this.logger.critical(failure.message)
+    raise
+  return json.loads(jsonNodeData)
+
+
+def deleteNode(node, dryRun=False):
+  '''
+  Delete a given node from the Chef Server.
+  '''
+  this.logger.info('Deleting %s from Chef Server', node)
+  deleteCommand = ['knife', 'node', 'delete', '-y', node]
+  if dryRun:
+    this.logger.info('DRY-RUN MODE: Skipping deletion of %s: %s', node, deleteCommand)
+  else:
+    deleteOutput = subprocess.check_output(deleteCommand)
+    this.logger.info('Deleted %s by %s, output was %s', node, deleteCommand, deleteOutput)
+
+
+def getNodeData(node):
+  '''
+  Validate that a given node is still active in EC2
+  '''
+  assert isinstance(node, basestring), ("node must be a string but is %r" % node)
+  this.logger.info('Reading chef data for node %s', node)
+  try:
+    nodeData = json.loads(subprocess.check_output(['knife', 'node', 'show', node, '-F', 'json',
+                                                   '-a', 'ec2']))[node]
+  except OSError as failure:
+    this.logger.error('Could not read node data for %s', node)
+    this.logger.error(failure.message)
+    raise
+  this.logger.debug('%s node account_id: %s', node, nodeData['ec2']['account_id'])
+  this.logger.debug('%s node instance_id: %s', node, nodeData['ec2']['instance_id'])
+  return nodeData
+
+
+def getEC2connection(region):
+  '''
+  Return the EC2 Connection for a given region. Create one if we don't already have one.
+  '''
+  if region in this.connections.keys():
+    this.logger.debug('Found an existing ec2 connection for %s', region)
+    return this.connections[region]
+  else:
+    this.logger.debug('Creating an ec2 connection for the %s region', region)
+    ec2conn = boto.ec2.connect_to_region(region)
+    this.connections[region] = ec2conn
+    return ec2conn
+
+
+def verifyNode(node, awsAccountID):
+  '''
+  Verify that a given node still exists in EC2 (Stopped instances are
+  treated as if they're still alive)
+
+  Returns False if a node should be purged, True otherwise.
+  '''
+  assert isinstance(awsAccountID, basestring), ("awsAccountID must be a string but is %r" % awsAccountID)
+  assert isinstance(node, basestring), ("node must be a string but is %r" % node)
+
+  this.logger.info('Verifying node %s', node)
+  try:
+    nodeData = getNodeData(node)
+  except OSError:
+    this.logger.error('Could not read node data for %s, skipping verification', node)
+    return True # Keep the grime reaper from deleting this node
+
+  try:
+    instanceID = nodeData['ec2']['instance_id']
+  except KeyError as failure:
+    this.logger.info('Could not read ec2.instance_id key for node %s - we only prune AWS instances, skipping', node)
+    return True
+
+  if awsAccountID != nodeData['ec2']['account_id']:
+    this.logger.debug('%s is in account %s, not %s, skipping', node, nodeData['ec2']['account_id'], awsAccountID)
+    return False
+  else:
+    this.logger.debug('Found %s in account %s', node, awsAccountID)
+
+  # For some reason, not all nodes have an ec2.region key, even when they
+  # have an ec2.placement_availability_zone key. Cope.
+  region = nodeData['ec2']['placement_availability_zone'][:-1]
+  this.logger.debug('Getting ec2 connection for %s', region)
+  ec2connection = getEC2connection(region)
+
+  if not ec2connection:
+    this.logger.critical('Could not get boto connection to ec2 in %s when processing %s', region, node)
+    # Prevent deletion of the node by the caller if we can't get a
+    # connection to the region
+    return True
+
+  try:
+    instanceStatus = ec2connection.get_only_instances(instance_ids=[instanceID])
+    this.logger.debug('%s (%s) in region %s status %s', node, instanceID, region, instanceStatus[0].state)
+    if instanceStatus[0].state == 'terminated':
+      return False
+  except boto.exception.EC2ResponseError:
+    this.logger.error('%s (%s) is not present in %s', node, instanceID, region)
+    return False
+  except IndexError:
+    this.logger.debug('%s not found, stale!', instanceID)
+    return False
+  return True
+
+
+def main():
+  '''
+  Do the work.
+  '''
+  cliArgs = parseCommandLine()
+  this.logger = getCustomLogger(name='crom-cruach', logLevel=cliArgs.logLevel)
+  this.connections = {}
+  this.logger.debug("cliArgs: %s", cliArgs)
+  sanityCheck()
+
+  nodes = getNodeList()
+  this.logger.debug(nodes)
+  for n in nodes:
+    if not verifyNode(node=n, awsAccountID=cliArgs.aws_account_id):
+      deleteNode(node=n, dryRun=cliArgs.dryRun)
+
+if __name__ == '__main__':
+  main()
