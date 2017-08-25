@@ -11,10 +11,10 @@ class Bakery < Thor
     end
     run 'bundle'
 
-    FileUtils::mkdir_p('fakeroot/usr/bin')
-    FileUtils::mkdir_p('fakeroot/usr/share/chef-valkyrie')
-    FileUtils.cp('chef-valkyrie', 'fakeroot/usr/bin')
-    FileUtils.cp('Readme.md', 'fakeroot/usr/share/chef-valkyrie')
+    FileUtils::mkdir_p('.fakeroot/usr/bin')
+    FileUtils::mkdir_p('.fakeroot/usr/share/chef-valkyrie')
+    FileUtils.cp('chef-valkyrie', '.fakeroot/usr/bin')
+    FileUtils.cp('Readme.md', '.fakeroot/usr/share/chef-valkyrie')
 
   end
 
@@ -33,9 +33,10 @@ class Bakery < Thor
       " --description 'chef-valkyrie is a tool to clean dead EC2 instances from your Chef Server'" + \
       ' --depends python' + \
       ' -s dir' + \
-      ' -C fakeroot' + \
+      ' -C .fakeroot' + \
       ' usr'
     run(fpm_cmd)
+    FileUtils.rm_r('.fakeroot')
   end
 
 end
