@@ -20,7 +20,7 @@ Instances that are found, but report a status of _terminated_ will also be purge
 4. Copy the pem file from step 2 to the **.chef** directory
 5. Add a **knife.rb** to your chef directory and configure it to use the pem file and utility account from step 2
 6. Create an IAM account with permission to read instance information from EC2.
-6. Set up a cron job to run 
+7. Set up a cron job to run `chef-valkyrie --aws-account-id YOUR_ACCOUNT_NUMBER` with the IAM credentials from step 6
 
 ## ToDo
 
