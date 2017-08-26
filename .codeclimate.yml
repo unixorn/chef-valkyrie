@@ -1,0 +1,29 @@
+---
+engines:
+  pep8:
+    enabled: true
+  duplication:
+    enabled: true
+    config:
+      languages:
+      - "python"
+  fixme:
+    enabled: true
+    exclude_paths:
+      - config/engines.yml
+  markdownlint:
+    enabled: true
+  shellcheck:
+    enabled: true
+ratings:
+  paths:
+  - "chef-valkyrie"
+  - "**.py"
+  - "**.md"
+exclude_paths:
+  - .bundle/
+  - spec/**/*
+  - benchmarks/**/*
+  - lib/**/*
+  - include/**/*
+  - bin/**/*
