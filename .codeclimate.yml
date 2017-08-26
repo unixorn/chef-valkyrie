@@ -13,6 +13,9 @@ engines:
       - config/engines.yml
   markdownlint:
     enabled: true
+    checks:
+      MD013:
+        enabled: false
   shellcheck:
     enabled: true
 ratings:
@@ -22,8 +25,9 @@ ratings:
   - "**.md"
 exclude_paths:
   - .bundle/
-  - spec/**/*
   - benchmarks/**/*
-  - lib/**/*
-  - include/**/*
   - bin/**/*
+  - include/**/*
+  - lib/**/*
+  - License.md
+  - spec/**/*
