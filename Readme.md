@@ -1,3 +1,7 @@
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Code Climate](https://codeclimate.com/github/unixorn/chef-valkyrie/badges/gpa.svg)](https://codeclimate.com/github/unixorn/chef-valkyrie)
+[![Issue Count](https://codeclimate.com/github/unixorn/chef-valkyrie/badges/issue_count.svg)](https://codeclimate.com/github/unixorn/chef-valkyrie)
+
 # chef-valkyrie
 
 ## Motivation
