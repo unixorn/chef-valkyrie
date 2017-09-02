@@ -143,8 +143,13 @@ def getNodeData(node):
     this.logger.error('Could not read node data for %s', node)
     this.logger.error(failure.message)
     raise
-  this.logger.debug('%s node account_id: %s', node, nodeData['ec2']['account_id'])
-  this.logger.debug('%s node instance_id: %s', node, nodeData['ec2']['instance_id'])
+  try:
+    if nodeData is None:
+      this.logger.warning('WTF %s has no nodeData', node)
+    this.logger.debug('%s node account_id: %s', node, nodeData['ec2']['account_id'])
+    this.logger.debug('%s node instance_id: %s', node, nodeData['ec2']['instance_id'])
+  except TypeError:
+    this.logger.debug('%s node has no account_id or instance_id', node)
   return nodeData
 
 
@@ -180,10 +185,15 @@ def verifyNode(node, awsAccountID):
     return True # Keep the grime reaper from deleting this node
 
   try:
+    if nodeData is None:
+      this.logger.critical('node %s has no nodeData', node)
     instanceID = nodeData['ec2']['instance_id']
   except KeyError as failure:
     this.logger.info('Could not read ec2.instance_id key for node %s - we only prune AWS instances, skipping', node)
     return True
+  except TypeError as typeFail:
+    this.logger.warning('Could not get valid data for node %s', node)
+    return False
 
   if awsAccountID != nodeData['ec2']['account_id']:
     this.logger.debug('%s is in account %s, not %s, skipping', node, nodeData['ec2']['account_id'], awsAccountID)
