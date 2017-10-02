@@ -124,7 +124,7 @@ def deleteNode(node, dryRun=False):
   this.logger.info('Deleting %s from Chef Server', node)
   deleteCommand = ['knife', 'node', 'delete', '-y', node]
   if dryRun:
-    this.logger.info('DRY-RUN MODE: Skipping deletion of %s: %s', node, deleteCommand)
+    this.logger.warning('DRY-RUN MODE: Skipping deletion of %s: %s', node, deleteCommand)
   else:
     deleteOutput = subprocess.check_output(deleteCommand)
     this.logger.info('Deleted %s by %s, output was %s', node, deleteCommand, deleteOutput)
@@ -158,7 +158,7 @@ def getEC2connection(region):
   Return the EC2 Connection for a given region. Create one if we don't already have one.
   '''
   if region in this.connections.keys():
-    this.logger.debug('Found an existing ec2 connection for %s', region)
+    this.logger.debug('Reusing existing ec2 connection for %s', region)
     return this.connections[region]
   else:
     this.logger.debug('Creating an ec2 connection for the %s region', region)
@@ -232,7 +232,7 @@ def main():
   Do the work.
   '''
   cliArgs = parseCommandLine()
-  this.logger = getCustomLogger(name='crom-cruach', logLevel=cliArgs.logLevel)
+  this.logger = getCustomLogger(name='chef-valkyrie', logLevel=cliArgs.logLevel)
   this.connections = {}
   this.logger.debug("cliArgs: %s", cliArgs)
   sanityCheck()
