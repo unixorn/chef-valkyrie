@@ -167,7 +167,7 @@ def getEC2connection(region):
     return ec2conn
 
 
-def verifyNode(node, awsAccountID):
+def validNode(node, awsAccountID):
   '''
   Verify that a given node still exists in EC2 (Stopped instances are
   treated as if they're still alive)
@@ -182,7 +182,8 @@ def verifyNode(node, awsAccountID):
     nodeData = getNodeData(node)
   except OSError:
     this.logger.error('Could not read node data for %s, skipping verification', node)
-    return True # Keep the grime reaper from deleting this node
+    # Keep the grime reaper from deleting this node if we can't read the node data
+    return True
 
   try:
     if nodeData is None:
@@ -193,11 +194,12 @@ def verifyNode(node, awsAccountID):
     return True
   except TypeError as typeFail:
     this.logger.warning('Could not get valid data for node %s', node)
-    return False
+    # Keep the grime reaper from deleting this node if we can't read the node data
+    return True
 
   if awsAccountID != nodeData['ec2']['account_id']:
     this.logger.debug('%s is in account %s, not %s, skipping', node, nodeData['ec2']['account_id'], awsAccountID)
-    return False
+    return True # Don't delete nodes that are not attached to the AWS account we're pruning
   else:
     this.logger.debug('Found %s in account %s', node, awsAccountID)
 
@@ -215,7 +217,7 @@ def verifyNode(node, awsAccountID):
 
   try:
     instanceStatus = ec2connection.get_only_instances(instance_ids=[instanceID])
-    this.logger.debug('%s (%s) in region %s status %s', node, instanceID, region, instanceStatus[0].state)
+    this.logger.info('%s (%s) in region %s status %s', node, instanceID, region, instanceStatus[0].state)
     if instanceStatus[0].state == 'terminated':
       return False
   except boto.exception.EC2ResponseError:
@@ -240,7 +242,7 @@ def main():
   nodes = getNodeList()
   this.logger.debug(nodes)
   for n in nodes:
-    if not verifyNode(node=n, awsAccountID=cliArgs.aws_account_id):
+    if not validNode(node=n, awsAccountID=cliArgs.aws_account_id):
       deleteNode(node=n, dryRun=cliArgs.dryRun)
 
 if __name__ == '__main__':
